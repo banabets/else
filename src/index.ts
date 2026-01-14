@@ -89,8 +89,24 @@ async function run() {
   
   // Write the thought
   console.log("✍️ Writing to X...");
-  await twitter.v2.tweet(thought);
-  console.log("✅ Posted successfully!");
+  try {
+    await twitter.v2.tweet(thought);
+    console.log("✅ Posted successfully!");
+  } catch (error: any) {
+    if (error.code === 403) {
+      console.error("\n❌ ERROR 403: Permisos insuficientes");
+      console.error("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+      console.error("Tu app de X solo tiene permisos de LECTURA.");
+      console.error("\nPara solucionarlo:");
+      console.error("1. Ve a https://developer.twitter.com/en/portal/dashboard");
+      console.error("2. Selecciona tu app → pestaña 'Settings'");
+      console.error("3. En 'User authentication settings' cambia a 'Read and write'");
+      console.error("4. ⚠️ IMPORTANTE: Regenera los Access Tokens después de cambiar permisos");
+      console.error("5. Actualiza tu .env con los nuevos tokens");
+      console.error("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n");
+    }
+    throw error;
+  }
 }
 
 run().catch(console.error);

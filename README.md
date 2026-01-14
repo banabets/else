@@ -65,15 +65,44 @@ Para obtener las 4 claves necesarias de X (Twitter):
      - **Access Token** → Esta es tu `X_ACCESS_TOKEN`
      - **Access Token Secret** → Esta es tu `X_ACCESS_SECRET`
 
-4. **Configurar permisos:**
-   - En la pestaña "Settings" de tu app
-   - Ve a "User authentication settings"
-   - Habilita "Read and write" permissions
+4. **Configurar permisos (MUY IMPORTANTE):**
+   - En la pestaña **"Settings"** de tu app
+   - Ve a **"User authentication settings"**
+   - Habilita **"Read and write"** permissions (NO solo "Read")
    - Guarda los cambios
+   - **⚠️ IMPORTANTE**: Después de cambiar los permisos, DEBES regenerar los Access Tokens:
+     - Ve de vuelta a **"Keys and Tokens"**
+     - Haz clic en **"Regenerate"** en la sección "Access Token and Secret"
+     - Copia los NUEVOS tokens (los antiguos ya no funcionarán)
 
 5. **Copiar al `.env`:**
    - Copia cada valor a tu archivo `.env`
    - **IMPORTANTE**: Nunca compartas estas claves ni las subas a GitHub
+
+### ⚠️ Error 403: Permisos incorrectos
+
+Si ves el error `403: Your client app is not configured with the appropriate oauth1 app permissions`:
+
+1. **En X Developer Portal:**
+   - Ve a https://developer.twitter.com/en/portal/dashboard
+   - Selecciona tu app → pestaña **"Settings"**
+   - En **"User authentication settings"** cambia a **"Read and write"**
+   - Guarda los cambios
+   - Ve a **"Keys and Tokens"** → **"Regenerate"** los Access Tokens
+   - Copia los NUEVOS tokens
+
+2. **Actualizar en Railway:**
+   - Ve a tu proyecto en https://railway.app
+   - Selecciona tu servicio
+   - Ve a la pestaña **"Variables"**
+   - Actualiza estas variables con los nuevos valores:
+     - `X_ACCESS_TOKEN` → nuevo token
+     - `X_ACCESS_SECRET` → nuevo secret
+   - Railway reiniciará automáticamente el servicio
+
+3. **Verificar:**
+   - Espera a que Railway termine de desplegar
+   - Revisa los logs para confirmar que funciona
 
 ## Why Groq?
 
