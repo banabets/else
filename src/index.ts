@@ -57,8 +57,16 @@ async function readRecentTweets(twitter: TwitterApi, count: number = 10): Promis
     });
     
     return timeline.data?.data?.map((tweet: any) => tweet.text) || [];
-  } catch (error) {
-    console.error("Error reading tweets:", error);
+  } catch (error: any) {
+    if (error.code === 429) {
+      const resetTime = error.rateLimit?.reset 
+        ? new Date(error.rateLimit.reset * 1000).toLocaleTimeString()
+        : 'unknown';
+      console.warn(`⚠️ Rate limit alcanzado al leer tweets. Se reiniciará a las ${resetTime}`);
+      console.warn("   Continuando sin contexto de tweets...");
+    } else {
+      console.error("Error reading tweets:", error.message || error);
+    }
     return [];
   }
 }
@@ -68,8 +76,12 @@ async function think(context: string[]): Promise<string> {
     ? `Recent observations:\n${context.slice(0, 5).map((t, i) => `${i + 1}. ${t}`).join('\n')}\n\n`
     : '';
   
-  const thinkingPrompt = `${contextText}Think deeply about patterns, connections, and insights. 
+  const thinkingPrompt = context.length > 0
+    ? `${contextText}Think deeply about patterns, connections, and insights. 
 Observe what emerges. Write a thoughtful, abstract observation in one or two sentences. 
+Be poetic, philosophical, or insightful. No explanations, just the observation itself.`
+    : `Think deeply about existence, patterns, and the nature of reality. 
+Write a thoughtful, abstract observation in one or two sentences. 
 Be poetic, philosophical, or insightful. No explanations, just the observation itself.`;
 
   return await generateText(thinkingPrompt, 200);
@@ -94,16 +106,32 @@ async function run() {
     console.log("✅ Posted successfully!");
   } catch (error: any) {
     if (error.code === 403) {
-      console.error("\n❌ ERROR 403: Permisos insuficientes");
-      console.error("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-      console.error("Tu app de X solo tiene permisos de LECTURA.");
-      console.error("\nPara solucionarlo:");
-      console.error("1. Ve a https://developer.twitter.com/en/portal/dashboard");
-      console.error("2. Selecciona tu app → pestaña 'Settings'");
-      console.error("3. En 'User authentication settings' cambia a 'Read and write'");
-      console.error("4. ⚠️ IMPORTANTE: Regenera los Access Tokens después de cambiar permisos");
-      console.error("5. Actualiza tu .env con los nuevos tokens");
-      console.error("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n");
+      const accessLevel = error.headers?.['x-access-level'] || error.headers?.['X-Access-Level'];
+      
+      if (accessLevel === 'read-write') {
+        console.error("\n⚠️ ERROR 403: Permisos configurados pero error al escribir");
+        console.error("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+        console.error("Los permisos están en 'read-write' pero aún hay un error.");
+        console.error("\nPosibles causas:");
+        console.error("1. Delay en la propagación de permisos (espera 5-10 minutos)");
+        console.error("2. El endpoint puede requerir permisos adicionales");
+        console.error("3. Verifica que el App type sea 'Automated App' o 'Bot'");
+        console.error("\nSolución:");
+        console.error("- Espera unos minutos y vuelve a intentar");
+        console.error("- Verifica en X Developer Portal que todo esté guardado");
+        console.error("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n");
+      } else {
+        console.error("\n❌ ERROR 403: Permisos insuficientes");
+        console.error("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+        console.error("Tu app de X solo tiene permisos de LECTURA.");
+        console.error("\nPara solucionarlo:");
+        console.error("1. Ve a https://developer.twitter.com/en/portal/dashboard");
+        console.error("2. Selecciona tu app → pestaña 'Settings'");
+        console.error("3. En 'User authentication settings' cambia a 'Read and write'");
+        console.error("4. ⚠️ IMPORTANTE: Regenera los Access Tokens después de cambiar permisos");
+        console.error("5. Actualiza tu .env con los nuevos tokens");
+        console.error("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n");
+      }
     }
     throw error;
   }
