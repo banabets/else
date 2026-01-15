@@ -736,10 +736,59 @@ async function postThought(twitter: TwitterApi): Promise<boolean> {
   }
 }
 
+async function checkDailyLimit(twitter: TwitterApi): Promise<{ canPost: boolean; resetTime?: Date }> {
+  try {
+    // Try a simple read operation to check rate limits
+    const me = await twitter.v2.me();
+    return { canPost: true };
+  } catch (error: any) {
+    if (error.rateLimit?.day?.remaining !== undefined) {
+      const remaining = error.rateLimit.day.remaining;
+      const resetTimestamp = error.rateLimit.day.reset;
+      const resetTime = resetTimestamp ? new Date(resetTimestamp * 1000) : undefined;
+      
+      if (remaining === 0) {
+        return { canPost: false, resetTime };
+      }
+    }
+    return { canPost: true };
+  }
+}
+
 async function runCycle() {
   console.log("\n" + "=".repeat(50));
   console.log(`🔄 Cycle started at ${new Date().toLocaleTimeString()}`);
   console.log("=".repeat(50) + "\n");
+  
+  // Check daily limit first
+  const limitCheck = await checkDailyLimit(twitter);
+  if (!limitCheck.canPost) {
+    const resetTime = limitCheck.resetTime?.toLocaleString() || 'unknown';
+    console.log(`⏸️ Daily tweet limit reached. Reset at: ${resetTime}`);
+    console.log("   Skipping posting this cycle. Will try again after reset.\n");
+    
+    // Still try to follow users (doesn't count toward tweet limit)
+    console.log("🔍 Still trying to follow users (doesn't use tweet quota)...");
+    try {
+      const usersToFollow = await findUsersToFollow(twitter, 3);
+      if (usersToFollow.length > 0) {
+        console.log(`👥 Found ${usersToFollow.length} user(s) to follow`);
+        const followedCount = await followUsers(twitter, usersToFollow);
+        console.log(`👥 Followed ${followedCount} new user(s)\n`);
+      } else {
+        console.log("👥 No relevant users found to follow\n");
+      }
+    } catch (error: any) {
+      if (error.code === 429) {
+        console.warn("⚠️ Rate limit al buscar/seguir usuarios.\n");
+      }
+    }
+    
+    console.log("=".repeat(50));
+    console.log("✅ Cycle completed (limited)");
+    console.log("=".repeat(50) + "\n");
+    return;
+  }
   
   // 1. Check for mentions and reply
   console.log("🔍 Step 1: Checking for mentions...");
@@ -748,13 +797,18 @@ async function runCycle() {
     console.log(`💬 Replied to ${repliedCount} mention(s)\n`);
   }
   
-  // 2. Engage with interesting tweets (prioritizing big accounts) - ALWAYS try
-  console.log("🔍 Step 2: Engaging with interesting tweets (big accounts prioritized)...");
-  const engagedCount = await engageWithTweets(twitter);
-  if (engagedCount > 0) {
-    console.log(`💬 Engaged with ${engagedCount} tweet(s)\n`);
+  // 2. Engage with interesting tweets (prioritizing big accounts)
+  // Only engage 50% of cycles to save tweet quota
+  if (Math.random() > 0.5) {
+    console.log("🔍 Step 2: Engaging with interesting tweets (big accounts prioritized)...");
+    const engagedCount = await engageWithTweets(twitter);
+    if (engagedCount > 0) {
+      console.log(`💬 Engaged with ${engagedCount} tweet(s)\n`);
+    } else {
+      console.log("💭 No engagements this cycle (may be rate limited or no tweets found)\n");
+    }
   } else {
-    console.log("💭 No engagements this cycle (may be rate limited or no tweets found)\n");
+    console.log("⏭️ Skipping engagement this cycle to save tweet quota\n");
   }
   
   // 3. Follow new users (once per cycle, limited to avoid spam)
@@ -777,9 +831,27 @@ async function runCycle() {
     }
   }
   
-  // 4. Post a new thought
+  // 4. Post a new thought (only if we have quota)
   console.log("🔍 Step 4: Posting new thought...");
-  await postThought(twitter);
+  try {
+    await postThought(twitter);
+  } catch (error: any) {
+    if (error.code === 429) {
+      const dayLimit = error.rateLimit?.day;
+      if (dayLimit && dayLimit.remaining === 0) {
+        const resetTime = dayLimit.reset 
+          ? new Date(dayLimit.reset * 1000).toLocaleString()
+          : 'unknown';
+        console.log(`\n⏸️ Daily tweet limit reached (17/17 used)`);
+        console.log(`   Reset at: ${resetTime}`);
+        console.log(`   Will resume posting after reset.\n`);
+      } else {
+        console.log(`\n⚠️ Rate limit (429). Will retry in next cycle.\n`);
+      }
+    } else {
+      throw error;
+    }
+  }
   
   console.log("\n" + "=".repeat(50));
   console.log("✅ Cycle completed");
@@ -790,15 +862,16 @@ async function run() {
   // Run immediately
   await runCycle();
   
-  // Then run every 30 minutes (1800000 ms)
-  // Adjust interval as needed: 30 min = 1800000, 1 hour = 3600000, 2 hours = 7200000
-  const INTERVAL_MS = 30 * 60 * 1000; // 30 minutes
+  // Run every 2 hours to avoid hitting daily limits (17 tweets/day)
+  // This allows ~12 cycles per day, with 1-2 tweets per cycle = safe margin
+  const INTERVAL_MS = 2 * 60 * 60 * 1000; // 2 hours
   
-  console.log(`⏰ Next cycle in ${INTERVAL_MS / 60000} minutes...\n`);
+  console.log(`⏰ Next cycle in ${INTERVAL_MS / 60000} minutes (2 hours)...\n`);
+  console.log("💡 Running every 2 hours to stay within daily tweet limit (17/day)\n");
   
   setInterval(async () => {
     await runCycle();
-    console.log(`⏰ Next cycle in ${INTERVAL_MS / 60000} minutes...\n`);
+    console.log(`⏰ Next cycle in ${INTERVAL_MS / 60000} minutes (2 hours)...\n`);
   }, INTERVAL_MS);
 }
 
