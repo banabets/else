@@ -185,13 +185,18 @@ async function searchInterestingTweets(twitter: TwitterApi, topics: string[], pr
       }
     }
     
-    // Filter tweets with engagement or from big accounts
+    // Filter tweets with engagement or from big accounts (more lenient)
     const interesting = tweets.filter((tweet: any) => {
       const hasEngagement = tweet.public_metrics && 
-        (tweet.public_metrics.like_count > 5 || tweet.public_metrics.reply_count > 0);
-      const isBigAccount = tweet.author_followers > 10000;
+        (tweet.public_metrics.like_count > 0 || tweet.public_metrics.reply_count > 0);
+      const isBigAccount = tweet.author_followers > 5000; // Lowered threshold to 5K
       return hasEngagement || isBigAccount;
     });
+    
+    console.log(`📊 Found ${tweets.length} total tweets, ${interesting.length} interesting ones`);
+    if (interesting.length > 0) {
+      console.log(`📈 Top account: ${Math.max(...interesting.map((t: any) => t.author_followers || 0))} followers`);
+    }
     
     return interesting.slice(0, 5); // Return top 5
   } catch (error: any) {
@@ -259,14 +264,18 @@ async function findUsersToFollow(twitter: TwitterApi, maxUsers: number = 10): Pr
         const following = user.public_metrics?.following_count || 0;
         const isNotFollowing = !followingIds.has(user.id);
         const isNotMe = user.id !== me.data.id;
-        const reasonableSize = followers > 100 && followers < 50000; // Not too small, not too big
-        const active = (user.public_metrics?.tweet_count || 0) > 50;
-        const relevantBio = user.description?.toLowerCase().includes(randomTerm.toLowerCase()) || 
+        const reasonableSize = followers > 50 && followers < 100000; // More lenient: 50-100K
+        const active = (user.public_metrics?.tweet_count || 0) > 20; // Lower threshold
+        const relevantBio = !user.description || // Allow if no bio
+                          user.description?.toLowerCase().includes(randomTerm.toLowerCase()) || 
                           user.description?.toLowerCase().includes("crypto") ||
                           user.description?.toLowerCase().includes("philosophy") ||
-                          user.description?.toLowerCase().includes("tech");
+                          user.description?.toLowerCase().includes("tech") ||
+                          user.description?.toLowerCase().includes("ai") ||
+                          user.description?.toLowerCase().includes("blockchain") ||
+                          user.description?.toLowerCase().includes("bitcoin");
         
-        return isNotFollowing && isNotMe && reasonableSize && active && relevantBio;
+        return isNotFollowing && isNotMe && reasonableSize && active;
       })
       .slice(0, maxUsers);
     
@@ -521,6 +530,24 @@ async function engageWithTweets(twitter: TwitterApi): Promise<number> {
     
     if (interestingTweets.length === 0) {
       console.log("💭 No interesting tweets found to engage with");
+      console.log("   Trying with less strict filters...");
+      // Try again with less strict filters
+      const fallbackTweets = await searchInterestingTweets(twitter, topics, false);
+      if (fallbackTweets.length > 0) {
+        console.log(`💬 Found ${fallbackTweets.length} fallback tweet(s)`);
+        // Use fallback tweets
+        for (const tweet of fallbackTweets.slice(0, 2)) {
+          try {
+            const replyText = await generateReply(tweet.text);
+            await twitter.v2.reply(replyText, tweet.id);
+            console.log(`✅ Engaged with fallback tweet: "${tweet.text.substring(0, 50)}..."`);
+            await new Promise(resolve => setTimeout(resolve, 3000));
+            return 1;
+          } catch (error: any) {
+            console.error(`Error with fallback tweet:`, error.message);
+          }
+        }
+      }
       return 0;
     }
 
@@ -732,7 +759,8 @@ async function runCycle() {
   }
   
   // 3. Follow new users (once per cycle, limited to avoid spam)
-  if (Math.random() > 0.7) { // 30% chance per cycle
+  // Increased to 50% chance to be more active
+  if (Math.random() > 0.5) { // 50% chance per cycle
     console.log("🔍 Step 3: Finding and following relevant users...");
     const usersToFollow = await findUsersToFollow(twitter, 5); // Max 5 per cycle
     if (usersToFollow.length > 0) {
@@ -741,6 +769,8 @@ async function runCycle() {
     } else {
       console.log("👥 No relevant users found to follow\n");
     }
+  } else {
+    console.log("⏭️ Skipping follow step this cycle (50% chance)\n");
   }
   
   // 4. Post a new thought
