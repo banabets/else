@@ -87,7 +87,159 @@ Be poetic, philosophical, or insightful. No explanations, just the observation i
   return await generateText(thinkingPrompt, 200);
 }
 
-async function run() {
+async function getMentions(twitter: TwitterApi, count: number = 5): Promise<any[]> {
+  try {
+    // Get current user to filter mentions
+    const me = await twitter.v2.me();
+    const myUserId = me.data.id;
+    
+    // Get recent mentions
+    const mentions = await twitter.v2.search({
+      query: `@${me.data.username} -is:retweet`,
+      max_results: count,
+      "tweet.fields": ["text", "author_id", "created_at", "in_reply_to_user_id"]
+    });
+    
+    return mentions.data?.data || [];
+  } catch (error: any) {
+    if (error.code === 429) {
+      console.warn("⚠️ Rate limit al leer menciones");
+    } else {
+      console.error("Error reading mentions:", error.message || error);
+    }
+    return [];
+  }
+}
+
+async function generateReply(originalTweet: string, authorUsername?: string): Promise<string> {
+  const replyPrompt = `Someone tweeted: "${originalTweet}"
+
+Respond thoughtfully and briefly (under 200 characters). Be poetic, philosophical, or insightful. 
+Keep it abstract and thought-provoking. No explanations, just a meaningful response.`;
+
+  const reply = await generateText(replyPrompt, 200);
+  
+  // Ensure reply is under 280 characters (Twitter limit)
+  return reply.length > 250 ? reply.substring(0, 247) + "..." : reply;
+}
+
+async function searchInterestingTweets(twitter: TwitterApi, topics: string[]): Promise<any[]> {
+  try {
+    // Search for tweets with interesting topics
+    const randomTopic = topics[Math.floor(Math.random() * topics.length)];
+    const query = `${randomTopic} -is:retweet lang:en`;
+    
+    const results = await twitter.v2.search({
+      query: query,
+      max_results: 5,
+      "tweet.fields": ["text", "author_id", "created_at", "public_metrics"]
+    });
+    
+    // Filter tweets with some engagement (likes, replies)
+    const interesting = (results.data?.data || []).filter((tweet: any) => 
+      tweet.public_metrics && 
+      (tweet.public_metrics.like_count > 0 || tweet.public_metrics.reply_count > 0)
+    );
+    
+    return interesting.slice(0, 3); // Return top 3
+  } catch (error: any) {
+    if (error.code === 429) {
+      console.warn("⚠️ Rate limit al buscar tweets");
+    } else {
+      console.error("Error searching tweets:", error.message || error);
+    }
+    return [];
+  }
+}
+
+async function replyToMentions(twitter: TwitterApi): Promise<number> {
+  try {
+    const mentions = await getMentions(twitter, 5);
+    
+    if (mentions.length === 0) {
+      console.log("💬 No new mentions to reply to");
+      return 0;
+    }
+
+    console.log(`💬 Found ${mentions.length} mention(s)`);
+    
+    let repliedCount = 0;
+    
+    for (const mention of mentions) {
+      try {
+        const replyText = await generateReply(mention.text);
+        await twitter.v2.reply(replyText, mention.id);
+        console.log(`✅ Replied to: "${mention.text.substring(0, 50)}..."`);
+        repliedCount++;
+        
+        // Small delay between replies to avoid rate limits
+        await new Promise(resolve => setTimeout(resolve, 2000));
+      } catch (error: any) {
+        if (error.code === 429) {
+          console.warn("⚠️ Rate limit al responder. Continuando...");
+          break;
+        } else {
+          console.error(`Error replying to tweet ${mention.id}:`, error.message);
+        }
+      }
+    }
+    
+    return repliedCount;
+  } catch (error: any) {
+    console.error("Error in replyToMentions:", error.message || error);
+    return 0;
+  }
+}
+
+async function engageWithTweets(twitter: TwitterApi): Promise<number> {
+  try {
+    // Topics to search for interesting tweets
+    const topics = [
+      "philosophy", "existence", "reality", "consciousness", 
+      "patterns", "meaning", "truth", "wisdom", "insight"
+    ];
+    
+    console.log("🔍 Searching for interesting tweets to engage with...");
+    const interestingTweets = await searchInterestingTweets(twitter, topics);
+    
+    if (interestingTweets.length === 0) {
+      console.log("💭 No interesting tweets found to engage with");
+      return 0;
+    }
+
+    console.log(`💬 Found ${interestingTweets.length} interesting tweet(s)`);
+    
+    let engagedCount = 0;
+    
+    for (const tweet of interestingTweets) {
+      try {
+        const replyText = await generateReply(tweet.text);
+        await twitter.v2.reply(replyText, tweet.id);
+        console.log(`✅ Engaged with: "${tweet.text.substring(0, 50)}..."`);
+        engagedCount++;
+        
+        // Delay between engagements
+        await new Promise(resolve => setTimeout(resolve, 3000));
+      } catch (error: any) {
+        if (error.code === 429) {
+          console.warn("⚠️ Rate limit al interactuar. Continuando...");
+          break;
+        } else if (error.code === 403) {
+          console.warn("⚠️ No se puede responder (posible respuesta duplicada o restricción)");
+        } else {
+          console.error(`Error engaging with tweet ${tweet.id}:`, error.message);
+        }
+      }
+    }
+    
+    return engagedCount;
+  } catch (error: any) {
+    console.error("Error in engageWithTweets:", error.message || error);
+    return 0;
+  }
+}
+
+async function postThought(twitter: TwitterApi): Promise<boolean> {
   console.log("🤔 Reading and thinking...");
   
   // Read recent tweets to have context
@@ -104,6 +256,7 @@ async function run() {
   try {
     await twitter.v2.tweet(thought);
     console.log("✅ Posted successfully!");
+    return true;
   } catch (error: any) {
     if (error.code === 403) {
       const accessLevel = error.headers?.['x-access-level'] || error.headers?.['X-Access-Level'];
@@ -135,6 +288,52 @@ async function run() {
     }
     throw error;
   }
+}
+
+async function runCycle() {
+  console.log("\n" + "=".repeat(50));
+  console.log(`🔄 Cycle started at ${new Date().toLocaleTimeString()}`);
+  console.log("=".repeat(50) + "\n");
+  
+  // 1. Check for mentions and reply
+  console.log("🔍 Step 1: Checking for mentions...");
+  const repliedCount = await replyToMentions(twitter);
+  if (repliedCount > 0) {
+    console.log(`💬 Replied to ${repliedCount} mention(s)\n`);
+  }
+  
+  // 2. Engage with interesting tweets (random chance to avoid spam)
+  if (Math.random() > 0.5) { // 50% chance
+    console.log("🔍 Step 2: Engaging with interesting tweets...");
+    const engagedCount = await engageWithTweets(twitter);
+    if (engagedCount > 0) {
+      console.log(`💬 Engaged with ${engagedCount} tweet(s)\n`);
+    }
+  }
+  
+  // 3. Post a new thought
+  console.log("🔍 Step 3: Posting new thought...");
+  await postThought(twitter);
+  
+  console.log("\n" + "=".repeat(50));
+  console.log("✅ Cycle completed");
+  console.log("=".repeat(50) + "\n");
+}
+
+async function run() {
+  // Run immediately
+  await runCycle();
+  
+  // Then run every 30 minutes (1800000 ms)
+  // Adjust interval as needed: 30 min = 1800000, 1 hour = 3600000, 2 hours = 7200000
+  const INTERVAL_MS = 30 * 60 * 1000; // 30 minutes
+  
+  console.log(`⏰ Next cycle in ${INTERVAL_MS / 60000} minutes...\n`);
+  
+  setInterval(async () => {
+    await runCycle();
+    console.log(`⏰ Next cycle in ${INTERVAL_MS / 60000} minutes...\n`);
+  }, INTERVAL_MS);
 }
 
 run().catch(console.error);
