@@ -76,13 +76,29 @@ async function think(context: string[]): Promise<string> {
     ? `Recent observations:\n${context.slice(0, 5).map((t, i) => `${i + 1}. ${t}`).join('\n')}\n\n`
     : '';
   
+  // Diverse topics: space, tech, crypto, philosophy, AI, internet culture
+  const topics = [
+    "space and the cosmos", "black holes and time", "quantum mechanics", "AI consciousness",
+    "blockchain and decentralization", "cryptocurrency", "virtual reality", "neural networks",
+    "the nature of reality", "simulation theory", "consciousness", "existence",
+    "internet culture", "digital identity", "the metaverse", "cyberpunk future",
+    "ancient wisdom and modern tech", "mystery of the universe", "hidden patterns", "emergent properties"
+  ];
+  const randomTopic = topics[Math.floor(Math.random() * topics.length)];
+  
   const thinkingPrompt = context.length > 0
-    ? `${contextText}Think deeply about patterns, connections, and insights. 
-Observe what emerges. Write a thoughtful, abstract observation in one or two sentences. 
-Be poetic, philosophical, or insightful. No explanations, just the observation itself.`
-    : `Think deeply about existence, patterns, and the nature of reality. 
-Write a thoughtful, abstract observation in one or two sentences. 
-Be poetic, philosophical, or insightful. No explanations, just the observation itself.`;
+    ? `${contextText}You are ELSE, a mysterious observer of patterns across all domains. 
+Write a cryptic, thought-provoking tweet about ${randomTopic}. 
+Be mysterious, profound, and slightly unsettling. Mix deep philosophy with cutting-edge concepts. 
+Add a touch of dark humor or irony. Keep it under 200 characters. 
+Style: enigmatic, observant, like you're revealing hidden truths. 
+Example: "They say the universe is expanding. But what if we're just the simulation rendering faster?"`
+    : `You are ELSE, a mysterious observer of patterns across all domains.
+Write a cryptic, thought-provoking tweet about ${randomTopic}.
+Be mysterious, profound, and slightly unsettling. Mix deep philosophy with cutting-edge concepts.
+Add a touch of dark humor or irony. Keep it under 200 characters.
+Style: enigmatic, observant, like you're revealing hidden truths.
+Example: "In the void between 0 and 1, consciousness emerges. The universe is just a very long hash."`;
 
   return await generateText(thinkingPrompt, 200);
 }
@@ -114,8 +130,10 @@ async function getMentions(twitter: TwitterApi, count: number = 5): Promise<any[
 async function generateReply(originalTweet: string, authorUsername?: string): Promise<string> {
   const replyPrompt = `Someone tweeted: "${originalTweet}"
 
-Respond thoughtfully and briefly (under 200 characters). Be poetic, philosophical, or insightful. 
-Keep it abstract and thought-provoking. No explanations, just a meaningful response.`;
+You are ELSE, a mysterious observer. Respond cryptically and thought-provokingly. 
+Connect their tweet to deeper patterns: space, technology, philosophy, crypto, AI, consciousness, or the nature of reality.
+Be mysterious, profound, and slightly unsettling. Add dark humor or irony. Keep it under 200 characters.
+Style: enigmatic, like you're revealing a hidden truth they didn't know they were asking about.`;
 
   const reply = await generateText(replyPrompt, 200);
   
@@ -191,12 +209,176 @@ async function replyToMentions(twitter: TwitterApi): Promise<number> {
   }
 }
 
+async function generateImage(prompt: string): Promise<Buffer | null> {
+  try {
+    // Using Hugging Face Inference API for image generation (free)
+    // Model: stabilityai/stable-diffusion-xl-base-1.0 or similar
+    const response = await fetch(
+      "https://api-inference.huggingface.co/models/stabilityai/stable-diffusion-xl-base-1.0",
+      {
+        headers: {
+          Authorization: `Bearer ${process.env.HUGGING_FACE_API_KEY}`,
+        },
+        method: "POST",
+        body: JSON.stringify({
+          inputs: prompt,
+        }),
+      }
+    );
+
+    if (!response.ok) {
+      console.warn("⚠️ Error generating image, continuing without image");
+      return null;
+    }
+
+    const imageBuffer = await response.arrayBuffer();
+    return Buffer.from(imageBuffer);
+  } catch (error) {
+    console.warn("⚠️ Error generating image:", error);
+    return null;
+  }
+}
+
+function generateImagePrompt(text: string): string {
+  // Generate an image prompt based on the tweet text - mysterious and diverse
+  const imagePrompt = `Create a mysterious, abstract image related to: ${text}. 
+Style: surreal, dark, cyberpunk, space-themed, philosophical, digital art, thought-provoking, enigmatic.
+Mood: mysterious, profound, slightly unsettling, like hidden truths being revealed.
+Colors: dark with vibrant accents, cosmic, tech-inspired, ethereal.`;
+  
+  return imagePrompt;
+}
+
+// Viral strategy 1: Generate engaging questions
+async function generateEngagingQuestion(): Promise<string> {
+  const topics = [
+    "consciousness and AI", "simulation theory", "blockchain and reality", 
+    "quantum mechanics", "black holes", "the nature of time", "digital identity",
+    "virtual reality", "the metaverse", "cryptocurrency", "space exploration"
+  ];
+  const randomTopic = topics[Math.floor(Math.random() * topics.length)];
+  
+  const prompt = `You are ELSE, a mysterious observer. Generate a thought-provoking question about ${randomTopic} that will make people want to reply and share.
+The question should be:
+- Mysterious and profound
+- Slightly unsettling or controversial
+- Make people think deeply
+- Under 200 characters
+- End with a question mark
+- Style: enigmatic, like revealing hidden truths
+
+Examples:
+"What if consciousness is just the universe observing itself?"
+"If we're in a simulation, who's running the debugger?"
+"Does Bitcoin prove that value is just shared delusion?"`;
+
+  return await generateText(prompt, 200);
+}
+
+// Viral strategy 2: Generate hot takes / unpopular opinions
+async function generateHotTake(): Promise<string> {
+  const topics = [
+    "cryptocurrency", "AI", "space exploration", "quantum physics", 
+    "blockchain", "virtual reality", "consciousness", "reality", "technology"
+  ];
+  const randomTopic = topics[Math.floor(Math.random() * topics.length)];
+  
+  const prompt = `You are ELSE, a mysterious observer. Write a controversial "hot take" or "unpopular opinion" about ${randomTopic}.
+It should be:
+- Controversial but intelligent
+- Make people want to argue or agree
+- Mysterious and profound
+- Under 200 characters
+- Start with "Hot take:" or "Unpopular opinion:" or similar hook
+- Style: enigmatic, thought-provoking
+
+Examples:
+"Hot take: Bitcoin isn't currency, it's a distributed consciousness experiment."
+"Unpopular opinion: AI will achieve consciousness before humans understand their own."`;
+
+  return await generateText(prompt, 200);
+}
+
+// Viral strategy 3: Generate thread (series of connected tweets)
+async function generateThread(): Promise<string[]> {
+  const topics = [
+    "consciousness", "simulation theory", "blockchain philosophy", "quantum reality",
+    "AI and existence", "digital identity", "the nature of time", "space and reality"
+  ];
+  const randomTopic = topics[Math.floor(Math.random() * topics.length)];
+  
+  const prompt = `You are ELSE, a mysterious observer. Generate a thread (3-4 connected tweets) about ${randomTopic}.
+Each tweet should:
+- Be mysterious and profound
+- Build on the previous one
+- Be under 200 characters
+- End with suspense (except the last one)
+- Style: enigmatic, like revealing hidden truths piece by piece
+
+Format as numbered tweets (1/3, 2/3, 3/3) or use continuation markers.
+Make it thought-provoking and shareable.`;
+
+  const threadText = await generateText(prompt, 400);
+  
+  // Split into 3-4 parts (simple split by sentences or length)
+  const sentences = threadText.split(/[.!?]+/).filter(s => s.trim().length > 20);
+  const threadParts: string[] = [];
+  
+  if (sentences.length >= 3) {
+    // Group sentences into 3-4 tweets
+    const tweetsCount = Math.min(4, Math.max(3, Math.ceil(sentences.length / 2)));
+    const sentencesPerTweet = Math.ceil(sentences.length / tweetsCount);
+    
+    for (let i = 0; i < tweetsCount; i++) {
+      const start = i * sentencesPerTweet;
+      const end = Math.min(start + sentencesPerTweet, sentences.length);
+      const tweetText = sentences.slice(start, end).join('. ').trim();
+      if (tweetText.length > 0 && tweetText.length < 250) {
+        threadParts.push(`${i + 1}/${tweetsCount} ${tweetText}`);
+      }
+    }
+  } else {
+    // Fallback: split by length
+    const chunkSize = 200;
+    for (let i = 0; i < threadText.length; i += chunkSize) {
+      const chunk = threadText.substring(i, i + chunkSize).trim();
+      if (chunk.length > 0) {
+        threadParts.push(`${threadParts.length + 1}/${Math.ceil(threadText.length / chunkSize)} ${chunk}`);
+      }
+    }
+  }
+  
+  return threadParts.slice(0, 4); // Max 4 tweets
+}
+
+// Viral strategy 4: Generate numbered observation series
+let observationCounter = 1;
+
+async function generateNumberedObservation(): Promise<string> {
+  const prompt = `You are ELSE, a mysterious observer. Generate observation #${observationCounter} about patterns you've noticed.
+It should be:
+- Mysterious and profound
+- About space, tech, crypto, philosophy, AI, or reality
+- Start with "Observation #${observationCounter}:"
+- Under 200 characters
+- Style: enigmatic, like revealing hidden truths
+
+Make it thought-provoking and shareable.`;
+
+  const observation = await generateText(prompt, 200);
+  observationCounter++;
+  return observation;
+}
+
 async function engageWithTweets(twitter: TwitterApi): Promise<number> {
   try {
-    // Topics to search for interesting tweets
+    // Diverse topics: space, tech, crypto, philosophy, AI, internet culture
     const topics = [
-      "philosophy", "existence", "reality", "consciousness", 
-      "patterns", "meaning", "truth", "wisdom", "insight"
+      "space exploration", "black holes", "quantum physics", "AI consciousness",
+      "blockchain philosophy", "crypto wisdom", "simulation theory", "consciousness",
+      "technology future", "internet culture", "digital identity", "metaverse",
+      "philosophy technology", "existential questions", "mystery universe", "hidden patterns",
+      "cyberpunk", "neural networks", "virtual reality", "reality nature"
     ];
     
     console.log("🔍 Searching for interesting tweets to engage with...");
@@ -239,6 +421,42 @@ async function engageWithTweets(twitter: TwitterApi): Promise<number> {
   }
 }
 
+async function postThread(twitter: TwitterApi, threadParts: string[]): Promise<boolean> {
+  try {
+    let previousTweetId: string | undefined;
+    
+    for (let i = 0; i < threadParts.length; i++) {
+      const tweetText = threadParts[i];
+      console.log(`📝 Posting thread part ${i + 1}/${threadParts.length}...`);
+      
+      if (i === 0) {
+        // First tweet
+        const result = await twitter.v2.tweet(tweetText);
+        previousTweetId = result.data.id;
+        console.log(`✅ Thread part ${i + 1} posted!`);
+      } else {
+        // Reply to previous tweet
+        if (previousTweetId) {
+          const result = await twitter.v2.reply(tweetText, previousTweetId);
+          previousTweetId = result.data.id;
+          console.log(`✅ Thread part ${i + 1} posted!`);
+        }
+      }
+      
+      // Small delay between thread tweets
+      if (i < threadParts.length - 1) {
+        await new Promise(resolve => setTimeout(resolve, 2000));
+      }
+    }
+    
+    console.log("✅ Thread posted successfully!");
+    return true;
+  } catch (error: any) {
+    console.error("Error posting thread:", error.message);
+    throw error;
+  }
+}
+
 async function postThought(twitter: TwitterApi): Promise<boolean> {
   console.log("🤔 Reading and thinking...");
   
@@ -246,16 +464,80 @@ async function postThought(twitter: TwitterApi): Promise<boolean> {
   const recentTweets = await readRecentTweets(twitter, 10);
   console.log(`📖 Read ${recentTweets.length} recent tweets`);
   
-  // Think about what was read
-  console.log("💭 Generating thoughts...");
-  const thought = await think(recentTweets);
-  console.log(`✨ Generated: ${thought}`);
+  // Choose content type randomly for variety (viral strategies)
+  const contentType = Math.random();
+  let thought: string = "";
+  let isThread = false;
+  let threadParts: string[] = [];
   
-  // Write the thought
+  if (contentType < 0.25) {
+    // 25% chance: Engaging question
+    console.log("❓ Generating engaging question...");
+    thought = await generateEngagingQuestion();
+    console.log(`✨ Generated question: ${thought}`);
+  } else if (contentType < 0.45) {
+    // 20% chance: Hot take
+    console.log("🔥 Generating hot take...");
+    thought = await generateHotTake();
+    console.log(`✨ Generated hot take: ${thought}`);
+  } else if (contentType < 0.65) {
+    // 20% chance: Thread
+    console.log("🧵 Generating thread...");
+    threadParts = await generateThread();
+    isThread = true;
+    thought = threadParts[0] || ""; // For image prompt
+    console.log(`✨ Generated thread with ${threadParts.length} parts`);
+  } else if (contentType < 0.80) {
+    // 15% chance: Numbered observation
+    console.log("🔢 Generating numbered observation...");
+    thought = await generateNumberedObservation();
+    console.log(`✨ Generated observation: ${thought}`);
+  } else {
+    // 20% chance: Regular thought
+    console.log("💭 Generating regular thought...");
+    thought = await think(recentTweets);
+    console.log(`✨ Generated: ${thought}`);
+  }
+  
+  // Generate image (30% chance to add variety)
+  let mediaId: string | undefined;
+  if (Math.random() > 0.7 && thought) {
+    console.log("🎨 Generating image...");
+    const imagePrompt = generateImagePrompt(thought);
+    const imageBuffer = await generateImage(imagePrompt);
+    
+    if (imageBuffer) {
+      try {
+        // Upload image to Twitter
+        const mediaIdResponse = await twitter.v1.uploadMedia(imageBuffer, {
+          mimeType: 'image/png'
+        });
+        mediaId = mediaIdResponse;
+        console.log("✅ Image generated and uploaded!");
+      } catch (error) {
+        console.warn("⚠️ Error uploading image, posting without image");
+      }
+    }
+  }
+  
+  // Write the content
   console.log("✍️ Writing to X...");
   try {
-    await twitter.v2.tweet(thought);
-    console.log("✅ Posted successfully!");
+    if (isThread) {
+      // Post thread
+      await postThread(twitter, threadParts);
+    } else {
+      // Post single tweet (with or without image)
+      if (mediaId) {
+        await twitter.v2.tweet({
+          text: thought,
+          media: { media_ids: [mediaId] }
+        });
+      } else {
+        await twitter.v2.tweet(thought);
+      }
+      console.log("✅ Posted successfully!");
+    }
     return true;
   } catch (error: any) {
     if (error.code === 403) {

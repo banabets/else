@@ -16,6 +16,10 @@ npm install
 # Get API key at https://console.groq.com/keys
 GROQ_API_KEY=your_groq_api_key_here
 
+# Hugging Face API (free - for image generation)
+# Get token at https://huggingface.co/settings/tokens
+HUGGING_FACE_API_KEY=your_hugging_face_token_here
+
 # Twitter/X API credentials
 X_API_KEY=your_api_key
 X_API_KEY_SECRET=your_api_key_secret
@@ -37,6 +41,13 @@ npm start
 2. Go to https://console.groq.com/keys
 3. Create a new API key
 4. Copy the key to your `.env` file
+
+### Hugging Face API Key (for image generation)
+
+1. Go to https://huggingface.co and create a free account
+2. Go to https://huggingface.co/settings/tokens
+3. Create a new token (read access is enough)
+4. Copy the token to your `.env` file
 
 ### Twitter/X API Keys
 
