@@ -144,15 +144,18 @@ Style: enigmatic, like you're revealing a hidden truth they didn't know they wer
 async function searchInterestingTweets(twitter: TwitterApi, topics: string[], prioritizeBigAccounts: boolean = true): Promise<any[]> {
   try {
     // Add delay to avoid rate limits
-    await new Promise(resolve => setTimeout(resolve, 2000));
+    await new Promise(resolve => setTimeout(resolve, 3000));
     
-    // Search for tweets with interesting topics
+    // Search for tweets with interesting topics - use simpler queries
     const randomTopic = topics[Math.floor(Math.random() * topics.length)];
+    // Simplify query to avoid complex searches that hit rate limits
     const query = `${randomTopic} -is:retweet lang:en`;
+    
+    console.log(`   Searching for: "${randomTopic}"`);
     
     const results = await twitter.v2.search({
       query: query,
-      max_results: 10, // Reduced to avoid rate limits
+      max_results: 15, // Increased slightly but still safe
       "tweet.fields": ["text", "author_id", "created_at", "public_metrics"],
       "user.fields": ["public_metrics", "username"]
     });
@@ -541,24 +544,7 @@ async function engageWithTweets(twitter: TwitterApi): Promise<number> {
     
     if (interestingTweets.length === 0) {
       console.log("💭 No interesting tweets found to engage with");
-      console.log("   Trying with less strict filters...");
-      // Try again with less strict filters
-      const fallbackTweets = await searchInterestingTweets(twitter, topics, false);
-      if (fallbackTweets.length > 0) {
-        console.log(`💬 Found ${fallbackTweets.length} fallback tweet(s)`);
-        // Use fallback tweets
-        for (const tweet of fallbackTweets.slice(0, 2)) {
-          try {
-            const replyText = await generateReply(tweet.text);
-            await twitter.v2.reply(replyText, tweet.id);
-            console.log(`✅ Engaged with fallback tweet: "${tweet.text.substring(0, 50)}..."`);
-            await new Promise(resolve => setTimeout(resolve, 3000));
-            return 1;
-          } catch (error: any) {
-            console.error(`Error with fallback tweet:`, error.message);
-          }
-        }
-      }
+      console.log("   Will try again in next cycle");
       return 0;
     }
 
@@ -762,31 +748,33 @@ async function runCycle() {
     console.log(`💬 Replied to ${repliedCount} mention(s)\n`);
   }
   
-  // 2. Engage with interesting tweets (prioritizing big accounts) - but skip if rate limited
-  // Only try 70% of the time to reduce rate limit issues
-  if (Math.random() > 0.3) {
-    console.log("🔍 Step 2: Engaging with interesting tweets (big accounts prioritized)...");
-    const engagedCount = await engageWithTweets(twitter);
-    if (engagedCount > 0) {
-      console.log(`💬 Engaged with ${engagedCount} tweet(s)\n`);
-    }
+  // 2. Engage with interesting tweets (prioritizing big accounts) - ALWAYS try
+  console.log("🔍 Step 2: Engaging with interesting tweets (big accounts prioritized)...");
+  const engagedCount = await engageWithTweets(twitter);
+  if (engagedCount > 0) {
+    console.log(`💬 Engaged with ${engagedCount} tweet(s)\n`);
   } else {
-    console.log("⏭️ Skipping engagement step this cycle to avoid rate limits\n");
+    console.log("💭 No engagements this cycle (may be rate limited or no tweets found)\n");
   }
   
   // 3. Follow new users (once per cycle, limited to avoid spam)
-  // Increased to 50% chance to be more active
-  if (Math.random() > 0.5) { // 50% chance per cycle
-    console.log("🔍 Step 3: Finding and following relevant users...");
-    const usersToFollow = await findUsersToFollow(twitter, 5); // Max 5 per cycle
+  // ALWAYS try, but limit to avoid hitting daily limits
+  console.log("🔍 Step 3: Finding and following relevant users...");
+  try {
+    const usersToFollow = await findUsersToFollow(twitter, 3); // Reduced to 3 per cycle to avoid rate limits
     if (usersToFollow.length > 0) {
+      console.log(`👥 Found ${usersToFollow.length} user(s) to follow`);
       const followedCount = await followUsers(twitter, usersToFollow);
       console.log(`👥 Followed ${followedCount} new user(s)\n`);
     } else {
       console.log("👥 No relevant users found to follow\n");
     }
-  } else {
-    console.log("⏭️ Skipping follow step this cycle (50% chance)\n");
+  } catch (error: any) {
+    if (error.code === 429) {
+      console.warn("⚠️ Rate limit al buscar/seguir usuarios. Continuando...\n");
+    } else {
+      console.error(`Error in follow step: ${error.message}\n`);
+    }
   }
   
   // 4. Post a new thought
