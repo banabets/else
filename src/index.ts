@@ -141,7 +141,7 @@ Style: enigmatic, like you're revealing a hidden truth they didn't know they wer
   return reply.length > 250 ? reply.substring(0, 247) + "..." : reply;
 }
 
-async function searchInterestingTweets(twitter: TwitterApi, topics: string[]): Promise<any[]> {
+async function searchInterestingTweets(twitter: TwitterApi, topics: string[], prioritizeBigAccounts: boolean = true): Promise<any[]> {
   try {
     // Search for tweets with interesting topics
     const randomTopic = topics[Math.floor(Math.random() * topics.length)];
@@ -149,17 +149,51 @@ async function searchInterestingTweets(twitter: TwitterApi, topics: string[]): P
     
     const results = await twitter.v2.search({
       query: query,
-      max_results: 5,
-      "tweet.fields": ["text", "author_id", "created_at", "public_metrics"]
+      max_results: 20, // Get more to filter by account size
+      "tweet.fields": ["text", "author_id", "created_at", "public_metrics"],
+      "user.fields": ["public_metrics", "username"]
     });
     
-    // Filter tweets with some engagement (likes, replies)
-    const interesting = (results.data?.data || []).filter((tweet: any) => 
-      tweet.public_metrics && 
-      (tweet.public_metrics.like_count > 0 || tweet.public_metrics.reply_count > 0)
-    );
+    let tweets = results.data?.data || [];
     
-    return interesting.slice(0, 3); // Return top 3
+    // Get user info for each tweet to check follower count
+    if (prioritizeBigAccounts && tweets.length > 0) {
+      const userIds = [...new Set(tweets.map((t: any) => t.author_id))];
+      try {
+        const usersResponse = await twitter.v2.users(userIds);
+        const users = usersResponse.data || [];
+        const usersMap = new Map(users.map((u: any) => [u.id, u]));
+        
+        // Add user info to tweets and prioritize big accounts
+        tweets = tweets.map((tweet: any) => {
+          const user = usersMap.get(tweet.author_id);
+          return {
+            ...tweet,
+            author_followers: user?.public_metrics?.followers_count || 0,
+            author_username: user?.username || ""
+          };
+        });
+        
+        // Sort by follower count (big accounts first) and engagement
+        tweets.sort((a: any, b: any) => {
+          const aScore = (a.author_followers / 1000) + (a.public_metrics?.like_count || 0);
+          const bScore = (b.author_followers / 1000) + (b.public_metrics?.like_count || 0);
+          return bScore - aScore;
+        });
+      } catch (error) {
+        console.warn("⚠️ Could not fetch user info, using engagement only");
+      }
+    }
+    
+    // Filter tweets with engagement or from big accounts
+    const interesting = tweets.filter((tweet: any) => {
+      const hasEngagement = tweet.public_metrics && 
+        (tweet.public_metrics.like_count > 5 || tweet.public_metrics.reply_count > 0);
+      const isBigAccount = tweet.author_followers > 10000;
+      return hasEngagement || isBigAccount;
+    });
+    
+    return interesting.slice(0, 5); // Return top 5
   } catch (error: any) {
     if (error.code === 429) {
       console.warn("⚠️ Rate limit al buscar tweets");
@@ -168,6 +202,107 @@ async function searchInterestingTweets(twitter: TwitterApi, topics: string[]): P
     }
     return [];
   }
+}
+
+// Function to find users interested in relevant topics
+async function findUsersToFollow(twitter: TwitterApi, maxUsers: number = 10): Promise<any[]> {
+  try {
+    const searchTerms = [
+      "Bitcoin", "crypto", "blockchain", "philosophy", "AI", "quantum", 
+      "space", "consciousness", "simulation theory", "Web3"
+    ];
+    
+    const randomTerm = searchTerms[Math.floor(Math.random() * searchTerms.length)];
+    console.log(`🔍 Searching for users interested in: ${randomTerm}`);
+    
+    // Search for recent tweets about the topic
+    const results = await twitter.v2.search({
+      query: `${randomTerm} -is:retweet lang:en`,
+      max_results: 50,
+      "tweet.fields": ["author_id", "public_metrics"],
+      "user.fields": ["public_metrics", "username", "description"]
+    });
+    
+    if (!results.data?.data) return [];
+    
+    // Get unique user IDs
+    const userIds = [...new Set(results.data.data.map((t: any) => t.author_id))];
+    
+    // Get user details
+    const usersResponse = await twitter.v2.users(userIds.slice(0, 100)); // Limit to 100
+    const users = Array.isArray(usersResponse) ? usersResponse : (usersResponse.data || []);
+    
+    // Filter users:
+    // - Not already following
+    // - Have reasonable follower count (not bots, not too big)
+    // - Active accounts
+    // - Relevant bio/description
+    const me = await twitter.v2.me();
+    let followingIds = new Set<string>();
+    try {
+      const followingResponse: any = await twitter.v2.following(me.data.id, { max_results: 1000 });
+      // Handle different response structures
+      let followingData: any[] = [];
+      if (Array.isArray(followingResponse)) {
+        followingData = followingResponse;
+      } else if (followingResponse?.data) {
+        followingData = Array.isArray(followingResponse.data) ? followingResponse.data : (followingResponse.data?.data || []);
+      }
+      followingIds = new Set(followingData.map((u: any) => u.id));
+    } catch (error) {
+      console.warn("⚠️ Could not fetch following list, will skip duplicate check");
+    }
+    
+    const candidates = users
+      .filter((user: any) => {
+        const followers = user.public_metrics?.followers_count || 0;
+        const following = user.public_metrics?.following_count || 0;
+        const isNotFollowing = !followingIds.has(user.id);
+        const isNotMe = user.id !== me.data.id;
+        const reasonableSize = followers > 100 && followers < 50000; // Not too small, not too big
+        const active = (user.public_metrics?.tweet_count || 0) > 50;
+        const relevantBio = user.description?.toLowerCase().includes(randomTerm.toLowerCase()) || 
+                          user.description?.toLowerCase().includes("crypto") ||
+                          user.description?.toLowerCase().includes("philosophy") ||
+                          user.description?.toLowerCase().includes("tech");
+        
+        return isNotFollowing && isNotMe && reasonableSize && active && relevantBio;
+      })
+      .slice(0, maxUsers);
+    
+    return candidates;
+  } catch (error: any) {
+    console.error("Error finding users to follow:", error.message || error);
+    return [];
+  }
+}
+
+// Function to follow users
+async function followUsers(twitter: TwitterApi, users: any[]): Promise<number> {
+  let followedCount = 0;
+  const me = await twitter.v2.me();
+  
+  for (const user of users) {
+    try {
+      await twitter.v2.follow(me.data.id, user.id);
+      console.log(`✅ Followed: @${user.username} (${user.public_metrics?.followers_count || 0} followers)`);
+      followedCount++;
+      
+      // Delay to avoid rate limits (Twitter allows ~400 follows per day)
+      await new Promise(resolve => setTimeout(resolve, 5000)); // 5 seconds between follows
+    } catch (error: any) {
+      if (error.code === 429) {
+        console.warn("⚠️ Rate limit reached for following. Stopping...");
+        break;
+      } else if (error.code === 403) {
+        console.warn(`⚠️ Cannot follow @${user.username} (may have restrictions)`);
+      } else {
+        console.error(`Error following @${user.username}:`, error.message);
+      }
+    }
+  }
+  
+  return followedCount;
 }
 
 async function replyToMentions(twitter: TwitterApi): Promise<number> {
@@ -381,20 +516,25 @@ async function engageWithTweets(twitter: TwitterApi): Promise<number> {
       "cyberpunk", "neural networks", "virtual reality", "reality nature"
     ];
     
-    console.log("🔍 Searching for interesting tweets to engage with...");
-    const interestingTweets = await searchInterestingTweets(twitter, topics);
+    console.log("🔍 Searching for interesting tweets (prioritizing big accounts)...");
+    const interestingTweets = await searchInterestingTweets(twitter, topics, true);
     
     if (interestingTweets.length === 0) {
       console.log("💭 No interesting tweets found to engage with");
       return 0;
     }
 
-    console.log(`💬 Found ${interestingTweets.length} interesting tweet(s)`);
+    console.log(`💬 Found ${interestingTweets.length} interesting tweet(s) (including big accounts)`);
     
     let engagedCount = 0;
     
     for (const tweet of interestingTweets) {
       try {
+        const accountInfo = tweet.author_followers 
+          ? ` (@${tweet.author_username || 'unknown'} - ${Math.floor(tweet.author_followers / 1000)}K followers)`
+          : '';
+        console.log(`💬 Engaging with tweet${accountInfo}...`);
+        
         const replyText = await generateReply(tweet.text);
         await twitter.v2.reply(replyText, tweet.id);
         console.log(`✅ Engaged with: "${tweet.text.substring(0, 50)}..."`);
@@ -584,17 +724,27 @@ async function runCycle() {
     console.log(`💬 Replied to ${repliedCount} mention(s)\n`);
   }
   
-  // 2. Engage with interesting tweets (random chance to avoid spam)
-  if (Math.random() > 0.5) { // 50% chance
-    console.log("🔍 Step 2: Engaging with interesting tweets...");
-    const engagedCount = await engageWithTweets(twitter);
-    if (engagedCount > 0) {
-      console.log(`💬 Engaged with ${engagedCount} tweet(s)\n`);
+  // 2. Engage with interesting tweets (prioritizing big accounts) - always do this
+  console.log("🔍 Step 2: Engaging with interesting tweets (big accounts prioritized)...");
+  const engagedCount = await engageWithTweets(twitter);
+  if (engagedCount > 0) {
+    console.log(`💬 Engaged with ${engagedCount} tweet(s)\n`);
+  }
+  
+  // 3. Follow new users (once per cycle, limited to avoid spam)
+  if (Math.random() > 0.7) { // 30% chance per cycle
+    console.log("🔍 Step 3: Finding and following relevant users...");
+    const usersToFollow = await findUsersToFollow(twitter, 5); // Max 5 per cycle
+    if (usersToFollow.length > 0) {
+      const followedCount = await followUsers(twitter, usersToFollow);
+      console.log(`👥 Followed ${followedCount} new user(s)\n`);
+    } else {
+      console.log("👥 No relevant users found to follow\n");
     }
   }
   
-  // 3. Post a new thought
-  console.log("🔍 Step 3: Posting new thought...");
+  // 4. Post a new thought
+  console.log("🔍 Step 4: Posting new thought...");
   await postThought(twitter);
   
   console.log("\n" + "=".repeat(50));
