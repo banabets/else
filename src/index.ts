@@ -143,13 +143,16 @@ Style: enigmatic, like you're revealing a hidden truth they didn't know they wer
 
 async function searchInterestingTweets(twitter: TwitterApi, topics: string[], prioritizeBigAccounts: boolean = true): Promise<any[]> {
   try {
+    // Add delay to avoid rate limits
+    await new Promise(resolve => setTimeout(resolve, 2000));
+    
     // Search for tweets with interesting topics
     const randomTopic = topics[Math.floor(Math.random() * topics.length)];
     const query = `${randomTopic} -is:retweet lang:en`;
     
     const results = await twitter.v2.search({
       query: query,
-      max_results: 20, // Get more to filter by account size
+      max_results: 10, // Reduced to avoid rate limits
       "tweet.fields": ["text", "author_id", "created_at", "public_metrics"],
       "user.fields": ["public_metrics", "username"]
     });
@@ -158,10 +161,12 @@ async function searchInterestingTweets(twitter: TwitterApi, topics: string[], pr
     
     // Get user info for each tweet to check follower count
     if (prioritizeBigAccounts && tweets.length > 0) {
-      const userIds = [...new Set(tweets.map((t: any) => t.author_id))];
+      const userIds = [...new Set(tweets.map((t: any) => t.author_id))].slice(0, 10); // Limit to 10 users
       try {
+        // Add delay before fetching users
+        await new Promise(resolve => setTimeout(resolve, 1000));
         const usersResponse = await twitter.v2.users(userIds);
-        const users = usersResponse.data || [];
+        const users = Array.isArray(usersResponse) ? usersResponse : (usersResponse.data || []);
         const usersMap = new Map(users.map((u: any) => [u.id, u]));
         
         // Add user info to tweets and prioritize big accounts
@@ -212,6 +217,9 @@ async function searchInterestingTweets(twitter: TwitterApi, topics: string[], pr
 // Function to find users interested in relevant topics
 async function findUsersToFollow(twitter: TwitterApi, maxUsers: number = 10): Promise<any[]> {
   try {
+    // Add delay to avoid rate limits
+    await new Promise(resolve => setTimeout(resolve, 3000));
+    
     const searchTerms = [
       "Bitcoin", "crypto", "blockchain", "philosophy", "AI", "quantum", 
       "space", "consciousness", "simulation theory", "Web3"
@@ -220,10 +228,10 @@ async function findUsersToFollow(twitter: TwitterApi, maxUsers: number = 10): Pr
     const randomTerm = searchTerms[Math.floor(Math.random() * searchTerms.length)];
     console.log(`🔍 Searching for users interested in: ${randomTerm}`);
     
-    // Search for recent tweets about the topic
+    // Search for recent tweets about the topic (reduced to avoid rate limits)
     const results = await twitter.v2.search({
       query: `${randomTerm} -is:retweet lang:en`,
-      max_results: 50,
+      max_results: 20, // Reduced from 50
       "tweet.fields": ["author_id", "public_metrics"],
       "user.fields": ["public_metrics", "username", "description"]
     });
@@ -233,8 +241,11 @@ async function findUsersToFollow(twitter: TwitterApi, maxUsers: number = 10): Pr
     // Get unique user IDs
     const userIds = [...new Set(results.data.data.map((t: any) => t.author_id))];
     
-    // Get user details
-    const usersResponse = await twitter.v2.users(userIds.slice(0, 100)); // Limit to 100
+    // Add delay before fetching users
+    await new Promise(resolve => setTimeout(resolve, 2000));
+    
+    // Get user details (reduced to avoid rate limits)
+    const usersResponse = await twitter.v2.users(userIds.slice(0, 20)); // Reduced from 100 to 20
     const users = Array.isArray(usersResponse) ? usersResponse : (usersResponse.data || []);
     
     // Filter users:
@@ -751,11 +762,16 @@ async function runCycle() {
     console.log(`💬 Replied to ${repliedCount} mention(s)\n`);
   }
   
-  // 2. Engage with interesting tweets (prioritizing big accounts) - always do this
-  console.log("🔍 Step 2: Engaging with interesting tweets (big accounts prioritized)...");
-  const engagedCount = await engageWithTweets(twitter);
-  if (engagedCount > 0) {
-    console.log(`💬 Engaged with ${engagedCount} tweet(s)\n`);
+  // 2. Engage with interesting tweets (prioritizing big accounts) - but skip if rate limited
+  // Only try 70% of the time to reduce rate limit issues
+  if (Math.random() > 0.3) {
+    console.log("🔍 Step 2: Engaging with interesting tweets (big accounts prioritized)...");
+    const engagedCount = await engageWithTweets(twitter);
+    if (engagedCount > 0) {
+      console.log(`💬 Engaged with ${engagedCount} tweet(s)\n`);
+    }
+  } else {
+    console.log("⏭️ Skipping engagement step this cycle to avoid rate limits\n");
   }
   
   // 3. Follow new users (once per cycle, limited to avoid spam)
