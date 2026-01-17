@@ -708,21 +708,32 @@ async function postThought(twitter: TwitterApi): Promise<boolean> {
   
   // Write the content
   console.log("✍️ Writing to X...");
+  const currentDate = new Date();
+  console.log(`📅 Current date: ${currentDate.toISOString()} (${currentDate.getFullYear()})`);
+  
   try {
     if (isThread) {
       // Post thread
       await postThread(twitter, threadParts);
     } else {
       // Post single tweet (with or without image)
+      let tweetResult;
       if (mediaId) {
-        await twitter.v2.tweet({
+        tweetResult = await twitter.v2.tweet({
           text: thought,
           media: { media_ids: [mediaId] }
         });
       } else {
-        await twitter.v2.tweet(thought);
+        tweetResult = await twitter.v2.tweet(thought);
       }
-      console.log("✅ Posted successfully!");
+      
+      // Log tweet details to verify date
+      if (tweetResult?.data) {
+        console.log(`✅ Posted successfully! Tweet ID: ${tweetResult.data.id}`);
+        console.log(`📅 Tweet published at: ${currentDate.toISOString()}`);
+      } else {
+        console.log("✅ Posted successfully!");
+      }
     }
     return true;
   } catch (error: any) {
@@ -880,7 +891,35 @@ async function runCycle() {
   console.log("=".repeat(50) + "\n");
 }
 
+async function verifyRecentTweets(twitter: TwitterApi) {
+  try {
+    console.log("🔍 Verifying recent tweets from this account...");
+    const me = await twitter.v2.me();
+    const myTweets = await twitter.v2.userTimeline(me.data.id, {
+      max_results: 5,
+      "tweet.fields": ["created_at", "text"]
+    });
+    
+    if (myTweets.data?.data) {
+      const now = new Date();
+      console.log(`\n📊 Last 5 tweets from @${me.data.username}:`);
+      myTweets.data.data.forEach((tweet: any, index: number) => {
+        const tweetDate = new Date(tweet.created_at);
+        const year = tweetDate.getFullYear();
+        const isRecent = (now.getTime() - tweetDate.getTime()) < 24 * 60 * 60 * 1000;
+        console.log(`  ${index + 1}. Year: ${year} | Recent: ${isRecent ? 'Yes' : 'No'} | "${tweet.text.substring(0, 50)}..."`);
+      });
+      console.log("");
+    }
+  } catch (error: any) {
+    console.warn("⚠️ Could not verify recent tweets:", error.message);
+  }
+}
+
 async function run() {
+  // Verify recent tweets first
+  await verifyRecentTweets(twitter);
+  
   // Run immediately
   await runCycle();
   
