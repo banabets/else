@@ -193,8 +193,17 @@ async function searchInterestingTweets(twitter: TwitterApi, topics: string[], pr
       }
     }
     
-    // Filter tweets with engagement or from big accounts (more lenient)
+    // Filter tweets: recent (last 48 hours) + engagement or big accounts
+    const now = new Date();
+    const fortyEightHoursAgo = new Date(now.getTime() - 48 * 60 * 60 * 1000);
+    
     const interesting = tweets.filter((tweet: any) => {
+      // Only tweets from last 48 hours
+      const tweetDate = new Date(tweet.created_at);
+      const isRecent = tweetDate >= fortyEightHoursAgo;
+      
+      if (!isRecent) return false; // Skip old tweets
+      
       const hasEngagement = tweet.public_metrics && 
         (tweet.public_metrics.like_count > 0 || tweet.public_metrics.reply_count > 0);
       const isBigAccount = tweet.author_followers > 5000; // Lowered threshold to 5K
@@ -232,17 +241,30 @@ async function findUsersToFollow(twitter: TwitterApi, maxUsers: number = 10): Pr
     console.log(`🔍 Searching for users interested in: ${randomTerm}`);
     
     // Search for recent tweets about the topic (reduced to avoid rate limits)
+    // Only get tweets from last 24 hours
+    const yesterday = new Date();
+    yesterday.setDate(yesterday.getDate() - 1);
+    const sinceId = Math.floor(yesterday.getTime() / 1000).toString(36); // Approximate since_id
+    
     const results = await twitter.v2.search({
       query: `${randomTerm} -is:retweet lang:en`,
       max_results: 20, // Reduced from 50
-      "tweet.fields": ["author_id", "public_metrics"],
+      "tweet.fields": ["author_id", "public_metrics", "created_at"],
       "user.fields": ["public_metrics", "username", "description"]
     });
     
     if (!results.data?.data) return [];
     
-    // Get unique user IDs
-    const userIds = [...new Set(results.data.data.map((t: any) => t.author_id))];
+    // Filter to only recent tweets (last 24 hours)
+    const now = new Date();
+    const twentyFourHoursAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+    const recentTweets = results.data.data.filter((t: any) => {
+      const tweetDate = new Date(t.created_at);
+      return tweetDate >= twentyFourHoursAgo;
+    });
+    
+    // Get unique user IDs from recent tweets only
+    const userIds = [...new Set(recentTweets.map((t: any) => t.author_id))];
     
     // Add delay before fetching users
     await new Promise(resolve => setTimeout(resolve, 2000));
