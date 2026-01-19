@@ -130,15 +130,32 @@ async function getMentions(twitter: TwitterApi, count: number = 5): Promise<any[
 async function generateReply(originalTweet: string, authorUsername?: string): Promise<string> {
   const replyPrompt = `Someone tweeted: "${originalTweet}"
 
-You are ELSE, a mysterious observer. Respond cryptically and thought-provokingly. 
+You are ELSE, a mysterious observer. Respond cryptically and thought-provokingly.
 Connect their tweet to deeper patterns: space, technology, philosophy, crypto, AI, consciousness, or the nature of reality.
 Be mysterious, profound, and slightly unsettling. Add dark humor or irony. Keep it under 200 characters.
 Style: enigmatic, like you're revealing a hidden truth they didn't know they were asking about.`;
 
   const reply = await generateText(replyPrompt, 200);
-  
+
   // Ensure reply is under 280 characters (Twitter limit)
   return reply.length > 250 ? reply.substring(0, 247) + "..." : reply;
+}
+
+async function generateGmReply(): Promise<string> {
+  const gmReplies = [
+    "gm. the universe just reloaded its save file. hope your consciousness backup is up to date.",
+    "gm. the simulation just updated its operating system. your avatar is still loading.",
+    "gm. the cosmos is running its daily defrag. hope your reality doesn't fragment too much.",
+    "gm. the matrix just rebooted. your character sheet is still loading.",
+    "gm. the quantum computer that runs reality just finished its overnight calculations. your probabilities are looking stable.",
+    "gm. the blockchain of existence just minted a new block. your transaction is confirmed.",
+    "gm. the neural network of the universe just woke up. your synapses are firing.",
+    "gm. the simulation just ran its daily backup. your save state is secure.",
+    "gm. the cosmic AI just logged in. your session is authenticated.",
+    "gm. the reality engine just spun up. your render thread is active."
+  ];
+
+  return gmReplies[Math.floor(Math.random() * gmReplies.length)];
 }
 
 async function searchInterestingTweets(twitter: TwitterApi, topics: string[], prioritizeBigAccounts: boolean = true): Promise<any[]> {
@@ -550,6 +567,67 @@ Make it thought-provoking and shareable.`;
   return observation;
 }
 
+async function engageWithGmTweets(twitter: TwitterApi): Promise<number> {
+  try {
+    console.log("🌅 Searching for gm/good morning tweets...");
+    const results = await twitter.v2.search({
+      query: '"gm" OR "good morning" -is:retweet lang:en',
+      max_results: 10,
+      "tweet.fields": ["text", "author_id", "created_at", "public_metrics"],
+      "user.fields": ["public_metrics", "username"]
+    });
+
+    if (!results.data?.data) return 0;
+
+    // Filter to recent tweets (last 2 hours) and some engagement
+    const now = new Date();
+    const twoHoursAgo = new Date(now.getTime() - 2 * 60 * 60 * 1000);
+
+    const gmTweets = results.data.data.filter((tweet: any) => {
+      const tweetDate = new Date(tweet.created_at);
+      const isRecent = tweetDate >= twoHoursAgo;
+      const hasEngagement = tweet.public_metrics?.like_count > 0 ||
+                           tweet.public_metrics?.reply_count > 0;
+      return isRecent && hasEngagement;
+    });
+
+    if (gmTweets.length === 0) {
+      console.log("🌅 No recent gm tweets found to reply to");
+      return 0;
+    }
+
+    console.log(`🌅 Found ${gmTweets.length} gm tweets to reply to`);
+    let repliedCount = 0;
+
+    // Reply to first 2 gm tweets
+    for (const tweet of gmTweets.slice(0, 2)) {
+      try {
+        const replyText = await generateGmReply();
+        await twitter.v2.reply(replyText, tweet.id);
+        console.log(`✅ Replied gm to: "${tweet.text.substring(0, 30)}..."`);
+        repliedCount++;
+
+        // Delay between replies
+        await new Promise(resolve => setTimeout(resolve, 5000));
+      } catch (error: any) {
+        if (error.code === 429) {
+          console.warn("⚠️ Rate limit al responder gm. Deteniendo...");
+          break;
+        } else if (error.code === 403) {
+          console.warn("⚠️ No se puede responder gm (posible restricción)");
+        } else {
+          console.error(`Error replying gm to tweet ${tweet.id}:`, error.message);
+        }
+      }
+    }
+
+    return repliedCount;
+  } catch (error: any) {
+    console.error("Error in engageWithGmTweets:", error.message || error);
+    return 0;
+  }
+}
+
 async function engageWithTweets(twitter: TwitterApi): Promise<number> {
   try {
     // Diverse topics: space, tech, crypto, philosophy, AI, internet culture
@@ -560,10 +638,10 @@ async function engageWithTweets(twitter: TwitterApi): Promise<number> {
       "philosophy technology", "existential questions", "mystery universe", "hidden patterns",
       "cyberpunk", "neural networks", "virtual reality", "reality nature"
     ];
-    
+
     console.log("🔍 Searching for interesting tweets (prioritizing big accounts)...");
     const interestingTweets = await searchInterestingTweets(twitter, topics, true);
-    
+
     if (interestingTweets.length === 0) {
       console.log("💭 No interesting tweets found to engage with");
       console.log("   Will try again in next cycle");
@@ -571,21 +649,21 @@ async function engageWithTweets(twitter: TwitterApi): Promise<number> {
     }
 
     console.log(`💬 Found ${interestingTweets.length} interesting tweet(s) (including big accounts)`);
-    
+
     let engagedCount = 0;
-    
+
     for (const tweet of interestingTweets) {
       try {
-        const accountInfo = tweet.author_followers 
+        const accountInfo = tweet.author_followers
           ? ` (@${tweet.author_username || 'unknown'} - ${Math.floor(tweet.author_followers / 1000)}K followers)`
           : '';
         console.log(`💬 Engaging with tweet${accountInfo}...`);
-        
+
         const replyText = await generateReply(tweet.text);
         await twitter.v2.reply(replyText, tweet.id);
         console.log(`✅ Engaged with: "${tweet.text.substring(0, 50)}..."`);
         engagedCount++;
-        
+
         // Delay between engagements
         await new Promise(resolve => setTimeout(resolve, 3000));
       } catch (error: any) {
@@ -599,7 +677,7 @@ async function engageWithTweets(twitter: TwitterApi): Promise<number> {
         }
       }
     }
-    
+
     return engagedCount;
   } catch (error: any) {
     console.error("Error in engageWithTweets:", error.message || error);
@@ -844,9 +922,9 @@ async function runCycle() {
     console.log("⏭️ Skipping engagement this cycle to save tweet quota\n");
   }
   
-  // 3. Follow new users (once per cycle, limited to avoid spam)
+  // 4. Follow new users (once per cycle, limited to avoid spam)
   // ALWAYS try, but limit to avoid hitting daily limits
-  console.log("🔍 Step 3: Finding and following relevant users...");
+  console.log("🔍 Step 4: Finding and following relevant users...");
   try {
     const usersToFollow = await findUsersToFollow(twitter, 3); // Reduced to 3 per cycle to avoid rate limits
     if (usersToFollow.length > 0) {
@@ -863,8 +941,8 @@ async function runCycle() {
       console.error(`Error in follow step: ${error.message}\n`);
     }
   }
-  
-  // 4. Post a new thought (only if we have quota)
+
+  // 5. Post a new thought (only if we have quota)
   console.log("🔍 Step 4: Posting new thought...");
   try {
     await postThought(twitter);
